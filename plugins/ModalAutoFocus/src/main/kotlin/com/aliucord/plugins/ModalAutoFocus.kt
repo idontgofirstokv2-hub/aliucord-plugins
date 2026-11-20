@@ -1,6 +1,5 @@
 package com.aliucord.plugins
 
-import android.app.Dialog
 import android.content.Context
 import android.view.View
 import android.view.ViewGroup
@@ -8,6 +7,7 @@ import android.view.Window
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import androidx.fragment.app.DialogFragment
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
@@ -15,28 +15,38 @@ import com.aliucord.patcher.after
 @AliucordPlugin
 class ModalAutoFocus : Plugin() {
     override fun start(context: Context) {
-        patcher.after<Dialog>("show") {
-            val dialog = it.thisObject as? Dialog ?: return@after
+        patcher.after<DialogFragment>("onStart") {
+            val fragment = it.thisObject as? DialogFragment ?: return@after
+            val dialog = fragment.dialog ?: return@after
             val window = dialog.window ?: return@after
 
+            window.clearFlags(
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+            )
             window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+
             window.decorView.post {
-                focusModalInput(window, context, retriesLeft = 3)
+                focusModalInput(window, retriesLeft = 15)
             }
         }
     }
 
-    private fun focusModalInput(window: Window, context: Context, retriesLeft: Int) {
+    private fun focusModalInput(window: Window, retriesLeft: Int) {
         val editText = findFirstEditText(window.decorView)
-        if (editText != null) {
-            if (editText.requestFocus()) {
-                val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-                imm?.showSoftInput(editText, InputMethodManager.SHOW_IMPLICIT)
+        if (editText != null && editText.isAttachedToWindow) {
+            editText.requestFocus()
+            editText.post {
+                val imm = editText.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                if (imm != null && !imm.showSoftInput(editText, InputMethodManager.SHOW_IMPLICIT)) {
+                    @Suppress("DEPRECATION")
+                    imm.showSoftInput(editText, InputMethodManager.SHOW_FORCED)
+                }
             }
         } else if (retriesLeft > 0) {
             window.decorView.postDelayed({
-                focusModalInput(window, context, retriesLeft - 1)
-            }, 25L)
+                focusModalInput(window, retriesLeft - 1)
+            }, 30L)
         }
     }
 
